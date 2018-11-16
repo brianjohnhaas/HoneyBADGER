@@ -22,7 +22,7 @@ print(mart.obj)
 hb <- new('HoneyBADGER', name='MGH31')
 hb$setGexpMats(gexp, ref, mart.obj, filter=FALSE, scale=FALSE, verbose=TRUE)
 
-pdf("hbadger.plots")
+pdf("hbadger.plots.pdf")
 
 hb$plotGexpProfile() ## initial visualization
 
