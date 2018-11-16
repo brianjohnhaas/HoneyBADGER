@@ -234,11 +234,11 @@ setMvFit=function(gexp.norm, num.genes = seq(5, 100, by=5), rep = 50, plot=FALSE
         if(verbose) {
             cat('Modeling expected variance ... ')
         }
-        mean.var.comp <- lapply(num.genes, function(ng) {
+        mean.var.comp <- lapply(num.genes, function(ng) { # runs on ng=5, 10, 15, ..., 100
             set.seed(0)
             m <- do.call(rbind, lapply(1:rep, function(i) {
-                nrmchr.sub <- gexp.norm[sample(1:nrow(gexp.norm), ng),]
-                nm <- apply(nrmchr.sub, 2, mean)
+                nrmchr.sub <- gexp.norm[sample(1:nrow(gexp.norm), ng),] # random set of ng genes expr data
+                nm <- apply(nrmchr.sub, 2, mean)  # gets mean for each cell based on random set of genes
                 nm
             }))
             return(m)
@@ -264,7 +264,7 @@ setMvFit=function(gexp.norm, num.genes = seq(5, 100, by=5), rep = 50, plot=FALSE
             }
             
             df <- data.frame('x'=num.genes, 'y'=apply(mean.comp, 2, var))
-            fit <- lm(log10(y)~log10(x), data=df)
+            fit <- lm(log10(y)~log10(x), data=df) #QUESTION: why log10 when data are already in log space?
             
             if(plot) {
                 x2 <- log10(num.genes)
@@ -309,14 +309,19 @@ setMvFit=function(gexp.norm, num.genes = seq(5, 100, by=5), rep = 50, plot=FALSE
 #' 
 #' @export
 #' 
-setGexpDev=function(gexp.norm, alpha=0.25, n=100, seed=0, plot=FALSE, verbose=FALSE) {
+setGexpDev=function(gexp.norm, alpha=0.25, n=100, seed=0, plot=FALSE, verbose=FALSE) {  # FIXME: default alpha=0.25 ?
+
+    ## uses ks test to determine the deviance from neutral in the gene expr. distribution
+    ## according to the given alpha, requiring neutral and alternative to share the same
+    ## standard deviation.
+    
         k = 101
         set.seed(seed)
         gexp.sd <- sd(gexp.norm)
-        devs <- seq_len(10)/10
-        pvs <- unlist(lapply(devs, function(dev) {
-            mean(unlist(lapply(seq_len(n), function(i) {
-                pv <- ks.test(rnorm(k, 0, gexp.sd), rnorm(k, dev, gexp.sd))
+        devs <- seq_len(10)/10  # 0.1, 0.2, ..., 1.0
+        pvs <- unlist(lapply(devs, function(dev) { # pvs= pvalues
+            mean(unlist(lapply(seq_len(n), function(i) { # n=100 iterations
+                pv <- ks.test(rnorm(k, 0, gexp.sd), rnorm(k, dev, gexp.sd)) # compare mean zero to mean @ dev w/ same gexp.sd
                 pv$p.value
             })))
         }))
@@ -360,7 +365,7 @@ setGexpDev=function(gexp.norm, alpha=0.25, n=100, seed=0, plot=FALSE, verbose=FA
 #' 
 calcGexpCnvProb=function(gexp.norm, genes, mvFit, m=0.15, region=NULL, verbose=FALSE) {
         gexp <- gexp.norm
-        gos <- genes[rownames(gexp.norm)]
+        gos <- genes[rownames(gexp.norm)] #granges objects
         fits <- mvFit[colnames(gexp.norm)]
         quiet <- !verbose
         
@@ -390,20 +395,20 @@ calcGexpCnvProb=function(gexp.norm, genes, mvFit, m=0.15, region=NULL, verbose=F
         }
         
         ## smooth
-        mu0 <- apply(gexp, 2, mean)
-        ng <- nrow(gexp)
-        sigma0 <- unlist(lapply(fits, function(fit) sqrt(10^predict(fit, newdata=data.frame(x=ng), interval="predict")[, 'fit'])))
+        mu0 <- apply(gexp, 2, mean)  # mean expr in each cell
+        ng <- nrow(gexp)  # num genes
+        sigma0 <- unlist(lapply(fits, function(fit) sqrt(10^predict(fit, newdata=data.frame(x=ng), interval="predict")[, 'fit']))) #QUESTION: fit is based on log10(y) ~ log10(x), so shouldn't x=ng be x=log10(ng) ?
         
         ## Model
         if(verbose) {
             cat('Aggregating data to list ... \n')
         }
         data <- list(
-            'K' = length(mu0),
-            'JJ' = nrow(gexp),
-            'gexp' = gexp,
-            'sigma0' = sigma0,
-            'mag0' = m
+            'K' = length(mu0), # number of cells
+            'JJ' = nrow(gexp), # number of genes
+            'gexp' = gexp,     # normalized gene expression
+            'sigma0' = sigma0, # standard deviations per cell
+            'mag0' = m         # expression deviation due to copy number change
         )
         modelFile <-  system.file("bug", "expressionModel.bug", package = "HoneyBADGER")
         
