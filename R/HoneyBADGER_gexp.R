@@ -519,7 +519,11 @@ calcGexpCnvBoundaries=function(gexp.norm, genes, m=0.15, chrs=paste0('chr', c(1:
         })
         boundgenes.pred <- unlist(boundgenes.pred, recursive=FALSE)
         
-        getTbv <- function(boundgenes.pred) {
+    getTbv <- function(boundgenes.pred) {
+        ## Runs separately on amplified and deleted regions
+        ## Goes through predictions for each clustering, increments vote
+        ## then defines boundaries between vote vs. no vote to define regions.
+        
           foo <- rep(0, nrow(gexp.norm)); names(foo) <- rownames(gexp.norm)
           foo[unique(unlist(boundgenes.pred))] <- 1
           ## vote
@@ -538,8 +542,10 @@ calcGexpCnvBoundaries=function(gexp.norm, genes, m=0.15, chrs=paste0('chr', c(1:
             }
             return() ## exit iteration, no more bound genes found
           }
-          
-          vote[vote > 0] <- 1
+
+
+        ## going through the vote list and defining regions
+          vote[vote > 0] <- 1  # any gene with a vote is reassigned to 1.
           mv <- 1 ## at least 1 vote
           cs <- 1
           bound.genes.cont <- rep(0, length(vote))
@@ -552,8 +558,10 @@ calcGexpCnvBoundaries=function(gexp.norm, genes, m=0.15, chrs=paste0('chr', c(1:
               cs <- cs + 1
             }
           }
-          tb <- table(bound.genes.cont)
-          tbv <- as.vector(tb); names(tbv) <- names(tb)
+        
+          tb <- table(bound.genes.cont) # counts of genes per cluster
+        tbv <- as.vector(tb);
+        names(tbv) <- names(tb)
           tbv <- tbv[-1] # get rid of 0
           
           ## all detected deletions have fewer than 5 genes...reached the end
@@ -566,11 +574,12 @@ calcGexpCnvBoundaries=function(gexp.norm, genes, m=0.15, chrs=paste0('chr', c(1:
             return()
           }
           
-          boundgenes.info <- lapply(names(tbv), function(ti) {
+        boundgenes.info <- lapply(names(tbv), function(ti) {
+            # get the gene names that correspond to that region
             bound.genes.new <- names(bound.genes.cont)[bound.genes.cont == ti]
             
             ## trim
-            bound.genes.new <- bound.genes.new[1:round(length(bound.genes.new)-length(bound.genes.new)*trim)]
+            bound.genes.new <- bound.genes.new[1:round(length(bound.genes.new)-length(bound.genes.new)*trim)] # trim set at 0.1 
           })
           boundgenes.region <- do.call("c", lapply(boundgenes.info, function(bs) range(genes[bs])))
           
