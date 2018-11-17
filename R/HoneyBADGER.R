@@ -2000,7 +2000,7 @@ HoneyBADGER$methods(
             colnames(amp.comb.prob) <- paste0('amp.comb.', colnames(amp.comb.prob))
             colnames(del.comb.prob) <- paste0('del.comb.', colnames(del.comb.prob))
         }
-        return(df)
+        return(df) ## QUESTION: shouldn't df incorporate the various mods after first creating it?
     }
 )
 
