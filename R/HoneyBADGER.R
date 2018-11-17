@@ -304,6 +304,8 @@ HoneyBADGER$methods(
         if(verbose) {
             cat('Modeling expected variance ... ')
         }
+        ## Models variance of the sample mean 
+        
         mean.var.comp <- lapply(num.genes, function(ng) {
             set.seed(0)
             m <- do.call(rbind, lapply(1:rep, function(i) {
@@ -318,7 +320,7 @@ HoneyBADGER$methods(
         fits <- lapply(1:ncol(gexp.norm), function(k) {
             ## for one cell
             mean.comp <- do.call(cbind, lapply(mean.var.comp, function(x) x[,k]))
-
+            
             if(plot) {
                 par(mfrow=c(1,3), mar=rep(2,4))
                 perf.test <- function(mat) {
@@ -1086,6 +1088,27 @@ HoneyBADGER$methods(
 #' @param verbose Verbosity (default: FALSE)
 #' @param ... Additional parameters for \code{\link{calcGexpCnvProb}}
 #'
+#' Operation summary:
+#'   start w/ init, using all cells and all genes.
+#'   smooth expr vals along chrs, and cluster cells
+#'   iterative HMM on segmented clusters
+#'      get lists of amp and del genes for each cluster segment
+#'   for each list of (amp or del) regions:
+#'      collapse del and amp genes from above iterations into genomic regions of min length
+#'   for each collapsed del or amp region:   
+#'      get cell probabilities for each region according to del or amp.
+#'   make combined table of (row=region, col=cell, val=pvalue)
+#'   binarize table
+#'   pick region with highest clonality for amp or deletion
+#'   extract cells into two groups: cell_G1: those with high confidence amp/del, and cell_G1: those with no amp/del
+#'   for cell_G1:
+#'      store the region genes
+#'      record these genes were assigned to these cells.
+#'   recurse on cell_G1, minus assigned genes.
+#'      further partition cell_G1 based on other genes.
+#'   recurse on cell_G2, minus assigned genes.
+#'      further partition cell_G2 based on other genes.
+#' 
 HoneyBADGER$methods(
     calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), min.traverse=5, min.num.genes=10, t=1e-6, init=FALSE, verbose=FALSE, ...) {
         if(!is.null(gexp.norm.sub)) {
@@ -1107,7 +1130,7 @@ HoneyBADGER$methods(
         ## remove old bound genes
         vi <- !(rownames(gexp.norm) %in% bound.genes.old)
         gexp.norm <- gexp.norm[vi,]
-
+        
         ## order
         gos <- as.data.frame(genes)
         rownames(gos) <- names(genes)
@@ -1117,7 +1140,7 @@ HoneyBADGER$methods(
         })
         tl <- tl[chrs]
         gexp.norm <- do.call(rbind, lapply(tl, function(x) x))
-
+        
         ## smooth
         k = 101
         mat.smooth <- apply(gexp.norm, 2, caTools::runmean, k)
@@ -1126,7 +1149,7 @@ HoneyBADGER$methods(
         d[is.nan(d)] <- 0
         d[is.infinite(d)] <- 0
         hc <- hclust(d, method="ward.D2")
-
+        
         ## iterative HMM
         heights <- seq_len(min(min.traverse, ncol(gexp.norm)))
         ## cut tree at various heights to establish groups
@@ -1196,7 +1219,8 @@ HoneyBADGER$methods(
             tb <- table(bound.genes.cont)
             tbv <- as.vector(tb); names(tbv) <- names(tb)
             tbv <- tbv[-1] # get rid of 0
-
+            ## tbv contains the genomic region names and their counts of genes.
+            
             ## all detected deletions have fewer than 5 genes...reached the end
             tbv[tbv < min.num.genes] <- NA
             tbv <- na.omit(tbv)
@@ -1206,9 +1230,13 @@ HoneyBADGER$methods(
                 }
                 return()
             }
+            
+            ## Have tbv now.
+          
 
             ## test each of these highly confident deletions
             prob.info <- lapply(names(tbv), function(ti) {
+                # get the list of genes in that cluster
                 bound.genes.new <- names(bound.genes.cont)[bound.genes.cont == ti]
                 if(verbose) {
                     cat('GENES POTENTIALLY AFFECTED BY CNV: ')
@@ -1216,7 +1244,7 @@ HoneyBADGER$methods(
                 }
                 ## now that we have boundaries, run on all cells
                 prob <- calcGexpCnvProb(gexp.norm.sub=gexp.norm[bound.genes.new, ], m=dev, verbose=verbose, ...)
-
+                
                 if(verbose) {
                     cat("AMPLIFICATION PROBABILITY: ")
                     cat(prob[[1]])
@@ -1232,21 +1260,34 @@ HoneyBADGER$methods(
             ##cat(prob.info)
             return(prob.info)
         }
+
+        ## amp and del probabilities for each cell
         amp.prob.info <- getTbv(lapply(boundgenes.pred, function(x) x[['amp']]))
         del.prob.info <- getTbv(lapply(boundgenes.pred, function(x) x[['del']]))
+        ## above info has:
+        ##   $ap: amplification cell probs
+        ##   $dp: deletion cell probsg
+        ##   bs:  the list of genes that define each genomic region.
 
+        ## get tables of amplification region and deletion region probabilities for cells.  column = cell, row=region, val=pvalue
         del.prob <- do.call(rbind, lapply(seq_along(del.prob.info), function(i) del.prob.info[[i]]$dp))
         amp.prob <- do.call(rbind, lapply(seq_along(amp.prob.info), function(i) amp.prob.info[[i]]$ap))
+
+        ## capture the lists of genes per region
         del.bound.genes.list <- lapply(seq_along(del.prob.info), function(i) del.prob.info[[i]]$bs)
         amp.bound.genes.list <- lapply(seq_along(amp.prob.info), function(i) amp.prob.info[[i]]$bs)
 
+        ## merge amp and del prob and gene list info
         prob.bin <- prob <- rbind(del.prob, amp.prob)
         bound.genes.list <- c(del.bound.genes.list, amp.bound.genes.list)
 
+        ## make the probs.bin binary reflecting having or not having amps, or NA for unsure regions.
         if(sum(prob < 0.25) > 0) {
+            ## cells unlikely to have amp or del
             prob.bin[prob < 0.25] <- 0
         }
         if(sum(prob > 0.75) > 0) {
+            ## cells likely to have amps or dels
             prob.bin[prob > 0.75] <- 1
         }
         if(sum(prob <= 0.75 & prob >= 0.25) > 0) {
@@ -1256,22 +1297,27 @@ HoneyBADGER$methods(
         if(is.null(prob.bin)) {
             return()
         }
+        
         if(ncol(prob.bin)>1) {
-            dps <- rowSums(prob.bin, na.rm=TRUE)
+            ## have multiple cells w/ amps or dels
+            dps <- rowSums(prob.bin, na.rm=TRUE) # number of cells w/ amp or del per region
             dpsi <- which(dps == max(dps))[1] ## pick one of the most clonal
+            ## gets the region that has the largest number of cells containing the amp or del
+            
             prob.fin <- t(as.matrix(prob[dpsi,]))
             bound.genes.new <- bound.genes.list[[dpsi]]
         } else {
+            # single cell
             prob.fin <- prob
             bound.genes.new <- bound.genes.list
         }
-
+        
         if(verbose) {
             print("CNV SNPS:")
             print(bound.genes.new)
             print(prob.fin)
         }
-
+        
         ## need better threshold
         g1 <- colnames(prob.fin)[prob.fin > 0.75]
         if(verbose) {
@@ -1291,7 +1337,7 @@ HoneyBADGER$methods(
             pred.genes.r[bound.genes.new, g1] <<- 1
             bound.genes.final[[length(bound.genes.final)+1]] <<- list(bound.genes.new)
         }
-
+        
         ## all discovered
         bound.genes.old <<- unique(c(bound.genes.new, bound.genes.old))
 
@@ -1308,7 +1354,6 @@ HoneyBADGER$methods(
                 calcGexpCnvBoundaries(gexp.norm.sub=gexp.norm[, g2])
             }, error = function(e) { cat(paste0("ERROR: ", e)) })
         }
-
 
     }
 )
