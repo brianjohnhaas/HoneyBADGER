@@ -49,7 +49,7 @@ cuts <- unique(ct)
 
 ## just grab cut 1 for example purposes.
 group=1
-mat.smooth <- apply(gexp.norm[, ct==1], 1, mean) # just getting the mean for each group.
+mat.smooth <- apply(gexp.norm[, ct==1], 1, mean) # just getting the mean for each group as numeric vector.
 ## change point
 delta <- c(0, 1, 0)
 t <- t
