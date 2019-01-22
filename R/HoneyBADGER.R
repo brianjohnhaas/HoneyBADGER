@@ -1929,32 +1929,48 @@ HoneyBADGER$methods(
     summarizeResults=function(geneBased=TRUE, alleleBased=FALSE, min.num.cells=2, t=0.75) {
         if(geneBased & !alleleBased) {
             rgs <- cnvs[['gene-based']][['all']]
-            retest <- results[['gene-based']]
-            amp.gexp.prob <- do.call(rbind, lapply(retest, function(x) x[[1]]))
+            retest <- results[['gene-based']]  # list[region][amp|del] -> probs
+            amp.gexp.prob <- do.call(rbind, lapply(retest, function(x) x[[1]])) # amp prob matrix (regions vs cells)
             del.gexp.prob <- do.call(rbind, lapply(retest, function(x) x[[2]]))
+
             df <- cbind(as.data.frame(rgs),
                         avg.amp.gexp=rowMeans(amp.gexp.prob),
                         avg.del.gexp=rowMeans(del.gexp.prob),
                         amp.gexp.prob,
                         del.gexp.prob)
 
-            ## filter to regions with at least some highly confident cells
-            vi1 <- rowSums(amp.gexp.prob > t) > min.num.cells
-            amp.gexp.prob <- amp.gexp.prob[vi1,] ## amplifications
-            vi2 <- rowSums(del.gexp.prob > t) > min.num.cells
-            del.gexp.prob <- del.gexp.prob[vi2,] ## amplifications
-
             names <- apply(as.data.frame(rgs), 1, paste0, collapse=":")
-            rownames(amp.gexp.prob) <- paste0('amp', names[vi1])
-            rownames(del.gexp.prob) <- paste0('del', names[vi2])
-            ret <- rbind(del.gexp.prob, amp.gexp.prob)
-            cnvs[['gene-based']][['amp']] <<- rgs[vi1]
-            cnvs[['gene-based']][['del']] <<- rgs[vi2]
+            
+            ## filter to regions with at least some highly confident cells
+            vi1 <- rowSums(amp.gexp.prob > t) > min.num.cells # indicates T/F for each region as vector
+            have_amp = (sum(vi1) > 0)
+            if (have_amp) {
+                amp.gexp.prob <- amp.gexp.prob[vi1,] ## amplifications
+                rownames(amp.gexp.prob) <- paste0('amp', names[vi1])
+                cnvs[['gene-based']][['amp']] <<- rgs[vi1]
+                #colnames(amp.gexp.prob) <- paste0('amp.gexp.', colnames(amp.gexp.prob))
+            }
+            
+            vi2 <- rowSums(del.gexp.prob > t) > min.num.cells
+            have_del = (sum(vi2) > 0)
+            if (have_del) {
+                del.gexp.prob <- del.gexp.prob[vi2,] ## amplifications
+                rownames(del.gexp.prob) <- paste0('del', names[vi2])
+                cnvs[['gene-based']][['del']] <<- rgs[vi2]
+                #colnames(del.gexp.prob) <- paste0('del.gexp.', colnames(del.gexp.prob))
+            }
+            
+            ret <- NULL
+            if (have_amp & have_del) {
+                ret <- rbind(del.gexp.prob, amp.gexp.prob)
+            } else if (have_amp) {
+                ret <- amp.gexp.prob
+            } else if (have_del) {
+                ret <- del.gexp.prob
+            }
+
             summary[['gene-based']] <<- ret
-
-            colnames(amp.gexp.prob) <- paste0('amp.gexp.', colnames(amp.gexp.prob))
-            colnames(del.gexp.prob) <- paste0('del.gexp.', colnames(del.gexp.prob))
-
+            
         }
         if(alleleBased & !geneBased) {
             rgs <- cnvs[['allele-based']][['all']]
