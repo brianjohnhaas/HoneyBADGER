@@ -391,7 +391,13 @@ HoneyBADGER$methods(
             hit[S4Vectors::subjectHits(overlap)] <- TRUE
             if(sum(hit) <= 1) {
                 cat(paste0("ERROR! ONLY ", sum(hit), " GENES IN REGION! \n"))
-                return();
+
+                ## must return data here, otherwise rgs and retest end up offset on do.call(rbind) after ret.
+                pm <- rep(NA, ncol(gexp))
+                names(pm) <- colnames(gexp)
+                return(list(pm, pm, pm))
+
+                #return();
             }
             if(sum(hit) < 3) {
                 cat(paste0("WARNING! ONLY ", sum(hit), " GENES IN REGION! \n"))
@@ -1832,7 +1838,7 @@ HoneyBADGER$methods(
 #' @param retestBoundSnps Boolean of whether to retest using allele model
 #' @param intersect If true will intersect regions identified from allele and expression HMMs. Otherwise, will union
 #' @param verbose Verbosity
-#' @param ... Additional parameters to pass to calcGexpCnvProb or calcAlleleCnvProb
+#' @param ... Additional parameters to pass to calcGexpnvProb or calcAlleleCnvProb
 #'
 HoneyBADGER$methods(
     retestIdentifiedCnvs=function(retestBoundGenes=TRUE, retestBoundSnps=FALSE, intersect=FALSE, verbose=FALSE, ...) {
@@ -1943,18 +1949,20 @@ HoneyBADGER$methods(
             
             ## filter to regions with at least some highly confident cells
             vi1 <- rowSums(amp.gexp.prob > t) > min.num.cells # indicates T/F for each region as vector
-            have_amp = (sum(vi1) > 0)
+            have_amp = sum(vi1, na.rm=T) > 0
             if (have_amp) {
-                amp.gexp.prob <- amp.gexp.prob[vi1,] ## amplifications
+                vi1 = which(vi1) # avoid NAs
+                amp.gexp.prob <- amp.gexp.prob[vi1,,drop=F] ## amplifications
                 rownames(amp.gexp.prob) <- paste0('amp', names[vi1])
                 cnvs[['gene-based']][['amp']] <<- rgs[vi1]
                 #colnames(amp.gexp.prob) <- paste0('amp.gexp.', colnames(amp.gexp.prob))
             }
             
             vi2 <- rowSums(del.gexp.prob > t) > min.num.cells
-            have_del = (sum(vi2) > 0)
+            have_del = sum(vi2, na.rm=T) > 0
             if (have_del) {
-                del.gexp.prob <- del.gexp.prob[vi2,] ## amplifications
+                vi2 = which(vi2) # avoid NAs
+                del.gexp.prob <- del.gexp.prob[vi2,,drop=F] ## amplifications
                 rownames(del.gexp.prob) <- paste0('del', names[vi2])
                 cnvs[['gene-based']][['del']] <<- rgs[vi2]
                 #colnames(del.gexp.prob) <- paste0('del.gexp.', colnames(del.gexp.prob))
@@ -2044,13 +2052,20 @@ HoneyBADGER$methods(
     }
 
     ## visualize as heatmap
-    if(is.null(hc)) {
+
+    Rowv <- NULL
+    if(is.null(hc) & nrow(df) > 1 & ncol(df) > 1) {
       hc <- hclust(dist(t(df^(power))), method='ward.D')
+      Rowv=as.dendrogram(hc)
     }
-    if(is.null(vc)) {
+    Colv <- NULL
+    if(is.null(vc) & nrow(df) > 1 & ncol(df) > 1) {
       vc <- hclust(dist(df^(power)), method='ward.D')
+      Colv=as.dendrogram(vc)
     }
-    heatmap(t(df), Colv=as.dendrogram(vc), Rowv=as.dendrogram(hc), scale="none", col=colorRampPalette(c('beige', 'grey', 'black'))(100), ...)
+    if (! (is.null(Rowv) & is.null(Colv)) ) {
+        heatmap(t(df), Colv=Colv, Rowv=Rowv, scale="none", col=colorRampPalette(c('beige', 'grey', 'black'))(100), ...)
+    }
     if(details) {
       return(list(hc=hc, vc=vc))
     }
