@@ -61,7 +61,7 @@ bound.genes.final <- list()
 
 #HoneyBADGER$methods(
 
-calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), min.traverse=5, min.num.genes=10, t=1e-6, init=FALSE, verbose=FALSE, ...) {
+calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), min.traverse=5, min.num.genes=10, t=1e-6, init=FALSE, verbose=FALSE, recursion_count = 0, G1orG2 = "BOTH",...) {
     if(!is.null(gexp.norm.sub)) {
         gexp.norm <- gexp.norm.sub
         genes <- genes[rownames(gexp.norm)]
@@ -77,6 +77,8 @@ calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), 
         cat('ERROR! USE init=TRUE! ')
         return()
     }
+
+    message("Dim(gexp): ", paste(dim(gexp.norm), sep=",", collapse=","), ", recursion count: " , recursion_count, ", G1orG2: ", G1orG2 )
 
     ## remove old bound genes
     vi <- !(rownames(gexp.norm) %in% bound.genes.old)
@@ -144,7 +146,6 @@ calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), 
 
     })
 
-    # boundgenes.pred = list ( list_results_from_cut=1, list_results_fromn_cut=2, ...)
 
     boundgenes.pred <- unlist(boundgenes.pred, recursive=FALSE) # flatten to just get all the various amp and del gene sets.
 
@@ -243,20 +244,33 @@ calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), 
     del.prob.info <- getTbv(lapply(boundgenes.pred, function(x) x[['del']]), amp_or_del='del')
     ## above info has:
     ##   $ap: amplification cell probs
-    ##   $dp: deletion cell probsg
-    ##   bs:  the list of genes that define each genomic region.
+    ##   $dp: deletion cell probs
+    ##   $bs:  the list of genes that define each genomic region.
 
     ## get tables of amplification region and deletion region probabilities for cells.  column = cell, row=region, val=pvalue
     del.prob <- do.call(rbind, lapply(seq_along(del.prob.info), function(i) del.prob.info[[i]]$dp))
     amp.prob <- do.call(rbind, lapply(seq_along(amp.prob.info), function(i) amp.prob.info[[i]]$ap))
+
+    ## head(del.prob)
+    ##  MGH31_A02 MGH31_A03 MGH31_A04 MGH31_A05 MGH31_A06 MGH31_A07 MGH31_A08
+    ## [1,]   0.00325   0.00000    0.0295   0.00000     0.000   0.00000         0
+    ## [2,]   1.00000   0.08275    0.0000   0.93625     0.905   0.98225         0
+    ## [3,]   0.11725   0.00000    0.0000   1.00000     1.000   1.00000         0
+    ##  MGH31_A10 MGH31_A11 MGH31_B01 MGH31_B02 MGH31_B04 MGH31_B05 MGH31_B06
+    ## [1,]         0    0.0000    0.0005   0.00000         0     0.002   0.00000
+    ## [2,]         1    0.7505    0.9990   0.02775         1     0.000   0.98775
+    ## [3,]         1    0.0000    0.0000   0.99125         1     0.000   0.00050
+    ## ...
+    ## rows are the different amp or del regions.
 
     ## capture the lists of genes per region
     del.bound.genes.list <- lapply(seq_along(del.prob.info), function(i) del.prob.info[[i]]$bs)
     amp.bound.genes.list <- lapply(seq_along(amp.prob.info), function(i) amp.prob.info[[i]]$bs)
 
     ## merge amp and del prob and gene list info
-    prob.bin <- prob <- rbind(del.prob, amp.prob)
-    bound.genes.list <- c(del.bound.genes.list, amp.bound.genes.list)
+    prob.bin <- prob <- rbind(del.prob, amp.prob)  #table of cell p-values;  prob.bin gets binarized below as yes/no/unsure.
+    bound.genes.list <- c(del.bound.genes.list, amp.bound.genes.list) # lists of gene lists
+
     ## make the probs.bin binary reflecting having or not having amps, or NA for unsure regions.
     if(sum(prob < 0.25) > 0) {
         ## cells unlikely to have amp or del
@@ -267,6 +281,7 @@ calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), 
         prob.bin[prob > 0.75] <- 1
     }
     if(sum(prob <= 0.75 & prob >= 0.25) > 0) {
+        ## unsure regions for cells
         prob.bin[prob <= 0.75 & prob >= 0.25] <- NA
     }
 
@@ -277,15 +292,21 @@ calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), 
     if(ncol(prob.bin)>1) {
         ## have multiple cells w/ amps or dels
         dps <- rowSums(prob.bin, na.rm=TRUE) # number of cells w/ amp or del per region
+
+        ## ####################################################################
+        ## ** select the region that has the greatest number of cells w/ CNV **
+        ## ####################################################################
+
         dpsi <- which(dps == max(dps))[1] ## pick one of the most clonal
         ## gets the region that has the largest number of cells containing the amp or del
 
+        ## store gene list and cell probabilities.
         prob.fin <- t(as.matrix(prob[dpsi,]))
         bound.genes.new <- bound.genes.list[[dpsi]]
     } else {
-                                        # single cell
+        ## a single cell
         prob.fin <- prob
-            bound.genes.new <- bound.genes.list
+        bound.genes.new <- bound.genes.list
     }
 
     if(verbose) {
@@ -297,12 +318,12 @@ calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), 
     ## need better threshold
     g1 <- colnames(prob.fin)[prob.fin > 0.75]
     if(verbose) {
-        print("GROUP 1:")
+        print("GROUP 1 (have CNV):")
         print(g1)
     }
     g2 <- colnames(prob.fin)[prob.fin <= 0.25]
     if(verbose) {
-        print("GROUP 2:")
+        print("GROUP 2 (dont have CNV):")
         print(g2)
     }
     ##clafProfile(r[, g1], n.sc[, g1], l, n.bulk)
@@ -310,6 +331,10 @@ calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), 
 
     ## record
     if(length(g1) > 0) {
+
+        ## ##################################################
+        ## Store the genes and cells w/ predicted CNV region.
+
         pred.genes.r[bound.genes.new, g1] <<- 1
         bound.genes.final[[length(bound.genes.final)+1]] <<- list(bound.genes.new)
     }
@@ -318,16 +343,17 @@ calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), 
     bound.genes.old <<- unique(c(bound.genes.new, bound.genes.old))
 
     ## Recursion
-    ##print('Recursion for Group1')
+    ## print('Recursion for Group1')
     if(length(g1)>=3) {
         tryCatch({
-            calcGexpCnvBoundaries(gexp.norm.sub=gexp.norm[, g1])
+            calcGexpCnvBoundaries(gexp.norm.sub=gexp.norm[, g1], recursion_count = recursion_count + 1, G1orG2 = "G1")
         }, error = function(e) { cat(paste0("ERROR: ", e)) })
     }
+
     ##print('Recursion for Group2')
     if(length(g2)>=3) {
         tryCatch({
-            calcGexpCnvBoundaries(gexp.norm.sub=gexp.norm[, g2])
+            calcGexpCnvBoundaries(gexp.norm.sub=gexp.norm[, g2], recursion_count = recursion_count + 1, G1orG2 = "G2")
         }, error = function(e) { cat(paste0("ERROR: ", e)) })
     }
 
