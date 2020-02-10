@@ -91,16 +91,21 @@ calcGexpCnvProb=function(gexp.norm.sub=NULL, m=0.15, region=NULL, quiet=TRUE, ve
     S <- snpLike[,grepl('S', v)]
     dd <- snpLike[,grepl('dd', v)]
     mu <- snpLike[,grepl('mu', v)]
+
+    ## S: matrix cols=cells x rows=(n.iters*n.chains)
+    ## mu: matrix cols=cells x rows=(n.iters*n.chains)
+    ## dd: vector length=(n.iters*n.chains)
+
     ##plot(mu0, colMeans(mu))
-    delcall <- apply(S*(1-dd), 2, mean)
-    ampcall <- apply(S*dd, 2, mean)
+    delcall <- apply(S*(1-dd), 2, mean) # mean of all cell iters  where S=1 (CNV) and dd=0 (deletion)
+    ampcall <- apply(S*dd, 2, mean)  # mean of all cell iters where S=1 (CNV) and dd=1 (amplification)
     ##plot(mu0, delcall)
     ##plot(mu0, ampcall)
     names(ampcall) <- names(delcall) <- colnames(gexp)
 
     return(list('posterior probability of amplification'=ampcall,
                 'posterior probability of deletion'=delcall,
-                'estimated mean normalized expression deviation'=mu0))
+                'estimated mean normalized expression deviation'=mu0)) # should be mu and not mu0?
 }
 
 

@@ -62,3 +62,72 @@ hb$summarizeResults:
 
 
 
+
+RJAGS expression modeling:
+
+data <- list(                                                                                                                 
+            'K' = length(mu0), # number of cells                                                                                      
+            'JJ' = nrow(gexp), # number of genes                                                                                      
+            'gexp' = gexp,                                                                                                            
+            'sigma0' = sigma0,                                                                                                        
+            'mag0' = m                                                                                                                
+        )    
+
+
+inits <- list(                                                                                                                
+            list(S = rep(0, ncol(gexp)), dd = 0),  # no cnv, deletion
+            list(S = rep(1, ncol(gexp)), dd = 0),  # yes cnv, deletion
+            list(S = rep(0, ncol(gexp)), dd = 1),  # no cnv, amplification
+            list(S = rep(1, ncol(gexp)), dd = 1)   # yes cnv, amplification
+            )
+
+parameters <- c('S',  # cell has CNV or not (0,1)
+				'dd', # direction of CNV 
+                'mu') # posterior expression value
+
+
+# model is run on an individual predicted CNV region.
+
+model {
+    ## Likelihood
+    ## Single cell
+    for( k in 1:K ) {
+
+        for ( j in 1:JJ ) {
+            ## Expression level
+            gexp[j, k] ~ dnorm(mu[k], sigma0[k])   # sigma0[k] and gexp[j,k] given  (problem, sigma0[k] is modeled based on size JJ!)
+                                                   # modeling mu[k] according to CNV status below..
+        }
+		
+        # 0 if neutral
+        # + mag if amplification
+        # - mag if deletion                    # s[k] = (0,1) CNV status, dd = (0,1) amp or del status.
+        mu[k] <- 0 * ( 1 - S[k] ) +            # always zero, no CNV
+                -mag0 * ( S[k] * (1 - dd)) +   # deletion CNV   dd=0 
+                 mag0 * ( S[k] * dd)           # amplification CNV  dd=1
+
+        ## Cell has CNV or not.
+        S[k] ~ dbern(alpha[k]) # cnv or not
+        alpha[k] ~ dunif(0,1) # cell specific hyper-parameter prior to allow for better mixing
+    }
+    dd ~ dbern(beta) # direction of cnv
+    beta ~ dunif(0,1) # cell specific hyper-parameter
+}
+
+
+
+# tally up posterior probabilities for amplifcations and deletions
+delcall <- apply(S*(1-dd), 2, mean) # mean of all cell iters  where S=1 (CNV) and dd=0 (deletion)
+ampcall <- apply(S*dd, 2, mean)  # mean of all cell iters where S=1 (CNV) and dd=1 (amplification)
+
+
+## areas for improvement:
+
+-in the HMM, the dev should be based on the smoothed data and not the gexp.norm data.
+-in Bayesian model, mag0 should probably be cell-specific, just as the sigma is cell-specific.
+-also, in Bayesian model, sigma0[k] is meant to be the cell-specific variance, but is actually fit based on the block length. The mean of the cell expression according to number of genes (JJ) in the block is not what's being modeled here.
+
+
+
+
+
