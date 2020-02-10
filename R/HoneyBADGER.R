@@ -405,7 +405,6 @@ HoneyBADGER$methods(
                 names(pm) <- colnames(gexp)
                 return(list(pm, pm, pm))
 
-                #return();
             }
             if(sum(hit) < 3) {
                 cat(paste0("WARNING! ONLY ", sum(hit), " GENES IN REGION! \n"))
@@ -1124,7 +1123,13 @@ HoneyBADGER$methods(
 #'      further partition cell_G2 based on other genes.
 #'
 HoneyBADGER$methods(
-    calcGexpCnvBoundaries=function(gexp.norm.sub=NULL, chrs=paste0('chr', c(1:22)), min.traverse=5, min.num.genes=10, t=1e-6, init=FALSE, verbose=FALSE, ...) {
+                calcGexpCnvBoundaries=function(gexp.norm.sub=NULL,
+                                               chrs=paste0('chr', c(1:22)),
+                                               min.traverse=5,
+                                               min.num.genes=10,
+                                               t=1e-6,
+                                               init=FALSE,
+                                               verbose=FALSE, ...) {
         if(!is.null(gexp.norm.sub)) {
             gexp.norm <- gexp.norm.sub
             genes <- genes[rownames(gexp.norm)]
@@ -1155,7 +1160,10 @@ HoneyBADGER$methods(
         tl <- tl[chrs]
         gexp.norm <- do.call(rbind, lapply(tl, function(x) x))
 
+        ## #######
         ## smooth
+        ## ######
+
         k = 101
         mat.smooth <- apply(gexp.norm, 2, caTools::runmean, k)
         d <- dist(t(mat.smooth))
@@ -1182,7 +1190,11 @@ HoneyBADGER$methods(
                     pn <- 0
                     pa <- dev
                     sd <- sd(mat.smooth)
-                    z <- HiddenMarkov::dthmm(mat.smooth, matrix(c(1-2*t, t, t, t, 1-2*t, t, t, t, 1-2*t), byrow=TRUE, nrow=3), delta, "norm", list(mean=c(pd, pn, pa), sd=c(sd,sd,sd)))
+                    z <- HiddenMarkov::dthmm(mat.smooth,
+                                             matrix(c(1-2*t, t, t, t, 1-2*t, t, t, t, 1-2*t), byrow=TRUE, nrow=3),
+                                             delta,
+                                             "norm",
+                                             list(mean=c(pd, pn, pa), sd=c(sd,sd,sd)) )
                     results <- HiddenMarkov::Viterbi(z)
 
                     ampgenes <- names(mat.smooth)[which(results==3)]
@@ -1256,6 +1268,10 @@ HoneyBADGER$methods(
                     cat('GENES POTENTIALLY AFFECTED BY CNV: ')
                     cat(bound.genes.new)
                 }
+
+                ## ##############################################
+                ## Get Cell CNV Probabilities via RJAGS
+                ##
                 ## now that we have boundaries, run on all cells
                 prob <- calcGexpCnvProb(gexp.norm.sub=gexp.norm[bound.genes.new, ], m=dev, verbose=verbose, ...)
 
@@ -1642,7 +1658,18 @@ HoneyBADGER$methods(
 #' @inheritParams HoneyBADGER_calcAlleleCnvProb
 #'
 HoneyBADGER$methods(
-    calcCombCnvProb=function(r.sub=NULL, n.sc.sub=NULL, l.sub=NULL, n.bulk.sub=NULL, gexp.norm.sub=NULL, m=0.15, region=NULL, filter=FALSE, pe=0.1, mono=0.7, n.iter=1000, quiet=FALSE, verbose=FALSE) {
+                calcCombCnvProb=function(r.sub=NULL,
+                                         n.sc.sub=NULL,
+                                         l.sub=NULL,
+                                         n.bulk.sub=NULL,
+                                         gexp.norm.sub=NULL,
+                                         m=0.15, region=NULL,
+                                         filter=FALSE,
+                                         pe=0.1,
+                                         mono=0.7,
+                                         n.iter=1000,
+                                         quiet=FALSE,
+                                         verbose=FALSE) {
         if(!is.null(r.sub)) {
             r.maf <- r.sub
             geneFactor <- geneFactor[rownames(r.sub)]
@@ -1850,6 +1877,8 @@ HoneyBADGER$methods(
 #'
 HoneyBADGER$methods(
     retestIdentifiedCnvs=function(retestBoundGenes=TRUE, retestBoundSnps=FALSE, intersect=FALSE, verbose=FALSE, ...) {
+
+        # retesting the gene-expr cnv probabilities
         if(retestBoundGenes) {
             if(verbose) {
                 cat('Retesting bound genes ... ')
@@ -1866,7 +1895,7 @@ HoneyBADGER$methods(
                 rgs <- range(genes[unlist(bound.genes.final),])
                 retest <- lapply(seq_len(length(rgs)), function(i) {
                     x <- calcGexpCnvProb(region=rgs[i], m=dev, verbose=verbose, ...)
-                    list(x[[1]], x[[2]])
+                    list(x[[1]], x[[2]]) # posterior-amp, posterior-del vectors for cells.
                 })
                 cnvs[['gene-based']] <<- list()
                 cnvs[['gene-based']][['all']] <<- rgs
@@ -1874,6 +1903,8 @@ HoneyBADGER$methods(
             }
         }
 
+
+        ## retesting snp region probabilities
         if(retestBoundSnps) {
             if(verbose) {
                 cat('Retesting bound snps ... ')
@@ -1898,6 +1929,8 @@ HoneyBADGER$methods(
             }
         }
 
+
+        ## Retesting both snp-regions and expr-regions
         if(retestBoundSnps & retestBoundGenes) {
             if(verbose) {
                 cat('Retesting bound snps and genes using joint model')
@@ -1947,6 +1980,7 @@ HoneyBADGER$methods(
             amp.gexp.prob <- do.call(rbind, lapply(retest, function(x) x[[1]])) # amp prob matrix (regions vs cells)
             del.gexp.prob <- do.call(rbind, lapply(retest, function(x) x[[2]]))
 
+            ## creates df
             df <- cbind(as.data.frame(rgs),
                         avg.amp.gexp=rowMeans(amp.gexp.prob),
                         avg.del.gexp=rowMeans(del.gexp.prob),
@@ -1969,8 +2003,8 @@ HoneyBADGER$methods(
             vi2 <- rowSums(del.gexp.prob > t) > min.num.cells
             have_del = sum(vi2, na.rm=T) > 0
             if (have_del) {
-                vi2 = which(vi2) # avoid NAs
-                del.gexp.prob <- del.gexp.prob[vi2,,drop=F] ## amplifications
+                vi2 = which(vi2)
+                del.gexp.prob <- del.gexp.prob[vi2,,drop=F] ## deletions
                 rownames(del.gexp.prob) <- paste0('del', names[vi2])
                 cnvs[['gene-based']][['del']] <<- rgs[vi2]
                 #colnames(del.gexp.prob) <- paste0('del.gexp.', colnames(del.gexp.prob))
@@ -1992,6 +2026,8 @@ HoneyBADGER$methods(
             rgs <- cnvs[['allele-based']][['all']]
             retest <- results[['allele-based']]
             del.loh.allele.prob <- do.call(rbind, lapply(retest, function(x) x))
+
+            ## creates df
             df <- cbind(as.data.frame(rgs), avg.del.loh.allele=rowMeans(del.loh.allele.prob), del.loh.allele.prob)
 
             ## filter to regions with at least some highly confident cells

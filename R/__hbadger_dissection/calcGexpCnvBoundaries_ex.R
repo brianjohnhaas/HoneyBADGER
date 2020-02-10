@@ -451,3 +451,12 @@ calcGexpCnvProb=function(gexp.norm.sub=NULL, m=0.15, region=NULL, quiet=TRUE, ve
 ### test:
 
 calcGexpCnvBoundaries(init=TRUE, verbose=TRUE)
+
+
+
+## report the CNVs that were identified
+
+print("CNV regions found:\n")
+regions.genes <- range(genes[unlist(bound.genes.final)])
+print(regions.genes)
+

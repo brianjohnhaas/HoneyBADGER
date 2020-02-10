@@ -1,0 +1,64 @@
+
+
+genes as rows, cells as columns.
+
+
+hb$setGexpMats:
+  -filter genes
+  -scaling of expression data (centering and zscore transform)
+  -subtracting mean of reference from sc data:
+  -results: gexp.norm
+
+hb$setMvFit:
+
+	mean/variance fitting: (Model expected gene expression variance as a function of number of genes)
+	-this is done for each cell, sampling 5 to 100 genes, step 5.
+	-fits log10(num_genes) ~ log10(variance) for each cell.
+    -data used is the gexp.norm 
+
+hb$setGexpDev:
+
+	Set needed absolute gene expression deviance to be able to distinguish neutral from amplified or deletion regions
+
+    -does a KS test w/ 101 randomly selected genes from rnorm(0, sd(data)) with an alternative distribution with the same variance but a mean step(0.1, 1) away from zero.  A linear model is fit, and the deviation that provides a KS result at 0.05 is reported as the optimal variance.
+	-uses sd(gexp.norm) for the fixed variance.
+
+hb$calcGexpCnvBoundaries:
+
+	Recursive HMM to identify CNV boundaries using normalized gene expression data
+
+	-smooth using 101 genes via runmean
+    -dist using smoothed data
+    -hclust on dist using ward.D2
+    -segmentation (HMM) run on all k-cuts of the hclust up to k=5 (default)
+    	-HMM:
+        	-sd: sd(smoothed)
+            -normal 0, amp,del = -dev, +dev  (note, dev defined above based on unsmoothed data!)
+    	-each cluster is examined for amps/dels
+			-cluster is split into k subclusters, and each subcluster is examined for amps/dels via HMM
+			-all predictions are collapsed and boundaries of consecutive amp/del genes define initial regions.
+            -consecutive regions with fewer than 5 genes are ignored.
+            
+		-each cell is examined in each region and a probability is estimated for amp/del of each block of genes using RJAGS
+			-RJAGS modeling:
+            	-using the gexp.norm (not the smoothed values)
+                -sd based on mvFit and number of genes in the block. (cell-specific)
+                -uses the global dev value. (not cell-specific)
+			-the region containing the largest number of cells (most clonal) is chosen as a candidate.
+            -cells are divided into those that have and do NOT have the CNV (G1, G2).
+            -recurse on G1 and G2 separately, after removing gene block. (assumes tree-like evolutionary pattern)
+			
+
+
+hb$retestIdentifiedCnvs:
+	-re-testing the identified CNVs, getting probabilities per cell.
+    	-identify gene ranges on chromosomes based on earlier segmentations.
+        -recompute indiv cell probabilities based on regions.
+        
+
+hb$summarizeResults:
+	-does some preliminary filtering, removing those amp or del regions having fewer than 3 cells w/ p>0.75
+	-it looks like the filtering isn't incorporated into the initial summarize results df.  Might need to run it twice....
+
+
+
