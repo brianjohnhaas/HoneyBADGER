@@ -126,6 +126,7 @@ ampcall <- apply(S*dd, 2, mean)  # mean of all cell iters where S=1 (CNV) and dd
 -in the HMM, the dev should be based on the smoothed data and not the gexp.norm data.
 -in Bayesian model, mag0 should probably be cell-specific, just as the sigma is cell-specific.
 -also, in Bayesian model, sigma0[k] is meant to be the cell-specific variance, but is actually fit based on the block length. The mean of the cell expression according to number of genes (JJ) in the block is not what's being modeled here.
+-are cells in the 'unsure' set (not G1 or G2) entirely ignored?
 
 
 
