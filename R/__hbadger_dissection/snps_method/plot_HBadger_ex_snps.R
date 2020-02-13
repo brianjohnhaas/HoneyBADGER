@@ -42,10 +42,10 @@ data = data %>% mutate(AF = alleleCov/totCov)
 
 data = data %>% mutate(mBAF = pmax(AF, 1-AF))
 
-## restrict to het snps
-#het_snps = data %>% filter(AF > 0.25 & AF < 0.75) %>% group_by(chrpos) %>% tally() %>% filter(n>=3) %>% pull(chrpos)
+## further restrict to het snps based on allele frequency data
+het_snps = data %>% filter(AF > 0.25 & AF < 0.75) %>% group_by(chrpos) %>% tally() %>% filter(n>=3) %>% pull(chrpos)
 
-#data = data %>% filter(chrpos %in% het_snps)  ## note, want het_snps from normal!!!  but dont have it here.
+data = data %>% filter(chrpos %in% het_snps)  ## note, want het_snps from normal!!!  but dont have it here.
 
 
 
@@ -70,7 +70,7 @@ p = ggplot(data=data) + facet_grid (~chr, scales = 'free_x', space = 'fixed') +
     geom_vline(data=chr_maxpos, aes(xintercept=minpos), color=NA) +
     geom_vline(data=chr_maxpos, aes(xintercept=maxpos), color=NA) +
 
-    geom_point(aes(x=pos, y=cell, color=mBAF, size=totCov))
+    geom_point(aes(x=pos, y=cell, color=mBAF, size=totCov), alpha=0.6) + scale_radius()
 
 plot(p)
 
