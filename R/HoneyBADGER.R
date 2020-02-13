@@ -561,6 +561,8 @@ HoneyBADGER$methods(
             if(verbose) {
                 cat("Setting composite lesser allele count ... \n")
             }
+
+
             E <- l/n.bulk # updated fraction of cells w/ allelic variant
             n <- nrow(r)  # number allelic sites
             m <- ncol(r)  # number cells

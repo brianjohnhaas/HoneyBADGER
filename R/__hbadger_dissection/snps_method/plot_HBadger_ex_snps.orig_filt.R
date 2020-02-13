@@ -5,16 +5,30 @@ data(r)
 data(cov.sc)
 
 
-r_melt = melt(r)
+
+hb <- new('HoneyBADGER', name='MGH31')
+hb$setAlleleMats(r.init=r, n.sc.init=cov.sc, het.deviance.threshold=0.1, n.cores=detectCores())
+
+pdf("orig_snp_plot.pdf", width=8, height=6)
+hb$plotAlleleProfile()
+dev.off()
+
+
+pdf("new_snp_plot.pdf", width=8, height=6)
+r.maf = hb$r.maf
+n.sc = hb$n.sc
+
+r_melt = melt(r.maf)
 colnames(r_melt) = c('chrpos', 'cell', 'alleleCov')
 
-sc_cov_melt = melt(cov.sc)
+sc_cov_melt = melt(n.sc)
 colnames(sc_cov_melt) = c('chrpos', 'cell', 'totCov')
 
 data = full_join(r_melt, sc_cov_melt, by=c('chrpos','cell'))
 
 ## include chr and postion separately.
-data = data %>% separate(chrpos, ":", into=c('chr', 'pos'), remove=FALSE)
+data = data %>% separate(chrpos, ":", into=c('chr', 'pos', 'pos2'), remove=FALSE)
+data$chr = sub(x=data$chr, pattern="chr", replacement="")
 
 
 data = data %>% mutate(chr = ordered(chr, levels=1:22))
@@ -24,17 +38,6 @@ data$pos = as.numeric(data$pos)
 ## get chr bounds for plotting later.
 chr_maxpos = data %>% group_by(chr) %>% summarize(maxpos = max(pos))
 chr_maxpos$minpos = 1
-
-## select snps where the fraction of cells containing an allelic site is between 0.1 and 0.9 of cells with read coverage.
-het_snps = data %>% group_by(chrpos) %>%  mutate(l=sum(alleleCov>0), n.bulk=sum(totCov>0), E=l/n.bulk) %>% filter(E>0.1 & E<0.9) %>% pull('chrpos')
-data = data %>% filter(chrpos %in% het_snps)
-
-
-
-## filter snps, require at least 3 cells have coverage
-min.cells = 3
-snps_min_cells = data %>%  filter(totCov > 0) %>% group_by(chrpos) %>% tally() %>% filter(n>=min.cells) %>% pull(chrpos)
-data = data %>% filter(chrpos %in% snps_min_cells)
 
 
 ## compute allele freq and mBAF
@@ -73,6 +76,9 @@ p = ggplot(data=data) + facet_grid (~chr, scales = 'free_x', space = 'fixed') +
     geom_point(aes(x=pos, y=cell, color=mBAF, size=totCov))
 
 plot(p)
+
+
+dev.off()
 
 
 
