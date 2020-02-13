@@ -496,18 +496,26 @@ HoneyBADGER$methods(
 #' @param verbose Verbosity
 #'
 HoneyBADGER$methods(
-    setAlleleMats=function(r.init, n.sc.init, l.init=NULL, n.bulk.init=NULL, filter=TRUE, het.deviance.threshold=0.05, min.cell=3, n.cores=1, verbose=TRUE) {
+    setAlleleMats=function(r.init, # snps (rows) x cells (columns), content=allelic depth
+                           n.sc.init, # snps(rows)  x cells (columns), content=total read depth
+                           l.init=NULL,
+                           n.bulk.init=NULL,
+                           filter=TRUE,
+                           het.deviance.threshold=0.05,
+                           min.cell=3,
+                           n.cores=1,
+                           verbose=TRUE) {
         if(verbose) {
-          cat("Initializing allele matrices ... \n")
+            cat("Initializing allele matrices ... \n")
         }
 
         if(is.null(l.init) | is.null(n.bulk.init)) {
-          if(verbose) {
-            cat("Creating in-silico bulk ... \n")
-            cat(paste0("using ", ncol(r.init), " cells ... \n"))
-          }
-            l <<- rowSums(r.init>0)
-            n.bulk <<- rowSums(n.sc.init>0)
+            if(verbose) {
+                cat("Creating in-silico bulk ... \n")
+                cat(paste0("using ", ncol(r.init), " cells ... \n"))
+            }
+            l <<- rowSums(r.init>0)   # count of cells containing evidence for variants
+            n.bulk <<- rowSums(n.sc.init>0)  # count of cells having read coverage at variant sites.
         } else {
             l <<- l.init
             n.bulk <<- n.bulk.init
@@ -518,16 +526,19 @@ HoneyBADGER$methods(
                 cat("Filtering for putative heterozygous snps ... \n")
                 cat(paste0("allowing for a ", het.deviance.threshold, " deviation from the expected 0.5 heterozygous allele fraction ... \n"))
             }
-            E <- l/n.bulk
-            vi <- names(which(E > het.deviance.threshold & E < 1-het.deviance.threshold))
+            E <- l/n.bulk  # fraction of cells as candidate HETs
+            vi <- names(which(E > het.deviance.threshold & E < 1-het.deviance.threshold))  # isn't supposed to be deviance from 0.5 ?
             ##cat(paste0(length(vi), " heterozygous SNPs identified \n"))
             if(length(vi) < 0.01*length(l)) {
+                # number of hets is just a small fraction of all covered sites.
                 cat("WARNING! CLONAL DELETION OR LOH POSSIBLE! \n")
             }
-            r <<- r.init[vi,]
-            n.sc <<- n.sc.init[vi,]
-            l <<- l[vi]
-            n.bulk <<- n.bulk[vi]
+
+            # restrict to HET sites.
+            r <<- r.init[vi,]         # allele depth
+            n.sc <<- n.sc.init[vi,]   # total depth
+            l <<- l[vi]               # counts of cell w/ allelic variant
+            n.bulk <<- n.bulk[vi]     # counts of cells w/ read coverage at allelic variant site.
 
             ## must have coverage in at least 5 cells
             if(verbose) {
@@ -544,13 +555,15 @@ HoneyBADGER$methods(
             r <<- r.init
             n.sc <<- n.sc.init
         }
+
+
         if(is.null(r.maf) | is.null(l.maf) | !is.null(r.init) | !is.null(l.init)) {
             if(verbose) {
                 cat("Setting composite lesser allele count ... \n")
             }
-            E <- l/n.bulk
-            n <- nrow(r)
-            m <- ncol(r)
+            E <- l/n.bulk # updated fraction of cells w/ allelic variant
+            n <- nrow(r)  # number allelic sites
+            m <- ncol(r)  # number cells
             mat <- do.call(rbind, parallel::mclapply(1:n, function(i) {
                 do.call(cbind, lapply(1:m, function(j) {
                     ri <- r[i,j]
@@ -558,16 +571,16 @@ HoneyBADGER$methods(
                     Ei <- E[i]
                     if(is.na(Ei)) {
                         mut.frac <- 0
-                    }
+                       }
                     else if(Ei <= 0.5) {
-                        mut.frac <- ri
-                    }
+                           mut.frac <- ri
+                       }
                     else if(Ei > 0.5) {
-                        mut.frac <- n.sci-ri
-                    }
+                           mut.frac <- n.sci-ri
+                       }
                     else {
-                        mut.frac <- 0
-                    }
+                           mut.frac <- 0
+                       }
 
                     ## f will be high if inconsistent
                     ## f will be low if consistent
@@ -579,6 +592,8 @@ HoneyBADGER$methods(
             }, mc.cores=n.cores))
             rownames(mat) <- rownames(r)
             colnames(mat) <- colnames(r)
+
+            # setting minor allele frequency
             r.maf <<- mat
 
             mat <- sapply(1:n, function(i) {
@@ -624,7 +639,7 @@ HoneyBADGER$methods(
             cat("Done setting initial allele matrices! \n")
         }
     }
-)
+    )
 
 
 #' Maps snps to genes
@@ -1407,7 +1422,18 @@ HoneyBADGER$methods(
 #' @param ... Additional parameters to pass to calcAlleleCnvProb
 #'
 HoneyBADGER$methods(
-    calcAlleleCnvBoundaries=function(r.sub=NULL, n.sc.sub=NULL, l.sub=NULL, n.bulk.sub=NULL, min.traverse=3, t=1e-6, pd=0.1, pn=0.45, min.num.snps=5, trim=0.1, init=FALSE, verbose=FALSE, ...) {
+                calcAlleleCnvBoundaries=function(r.sub=NULL,
+                                                 n.sc.sub=NULL,
+                                                 l.sub=NULL,
+                                                 n.bulk.sub=NULL,
+                                                 min.traverse=3,
+                                                 t=1e-6,
+                                                 pd=0.1,
+                                                 pn=0.45,
+                                                 min.num.snps=5,
+                                                 trim=0.1,
+                                                 init=FALSE,
+                                                 verbose=FALSE, ...) {
 
         if(!is.null(r.sub)) {
             r.maf <- r.sub
@@ -1479,7 +1505,13 @@ HoneyBADGER$methods(
 
                     ## change point
                     delta <- c(0, 1)
-                    z <- HiddenMarkov::dthmm(mafl, matrix(c(1-t, t, t, 1-t), byrow=TRUE, nrow=2), delta, "binom", list(prob=c(pd, pn)), list(size=sizel), discrete=TRUE)
+                    z <- HiddenMarkov::dthmm(mafl,
+                                             matrix(c(1-t, t, t, 1-t), byrow=TRUE, nrow=2),
+                                             delta, "binom",
+                                             list(prob=c(pd, pn)),
+                                             list(size=sizel),
+                                             discrete=TRUE)
+
                     results <- HiddenMarkov::Viterbi(z)
 
                     ## Get boundaries from states
@@ -1757,16 +1789,30 @@ HoneyBADGER$methods(
           cat(paste0('and ', length(n.bulk), ' snps ... '))
         }
 
-        genes.of.interest <- unique(geneFactor)
+        genes.of.interest <- unique(geneFactor)  # vector of gene ids
         if(verbose) {
             cat(paste0('... within ', length(genes.of.interest), ' genes ... \n'))
         }
+
+        # reminder as to what's in geneFactor
+        # head(geneFactor)
+        # chr1:33475750:33475750 chr1:33475767:33475767 chr1:33475791:33475791
+        #      "127544"               "127544"               "127544"
+        # chr1:33475879:33475879 chr1:33476032:33476032 chr1:33476065:33476065
+        #      "127544"               "127544"               "127544"
+
 
         ## associate each gene factor with a set of snps
         genes2snps.dict <- lapply(seq_along(genes.of.interest), function(i) {
             names(geneFactor)[which(geneFactor %in% genes.of.interest[i])]
         })
         names(genes2snps.dict) <- genes.of.interest
+
+        # genes2snps.dict
+        # $`127544`
+        # [1] "chr1:33475750:33475750" "chr1:33475767:33475767" "chr1:33475791:33475791"
+        # [4] "chr1:33475879:33475879" "chr1:33476032:33476032" "chr1:33476065:33476065"
+        # [7] "chr1:33476090:33476090" "chr1:33476239:33476239" "chr1:33476292:33476292"
 
         ## smooth
         ## mat <- apply(gexp, 2, runmean, k=window.size)
@@ -1781,17 +1827,29 @@ HoneyBADGER$methods(
 
         ## Convert to multi-dimensions based on j
         I.j <- unlist(lapply(genes2snps.dict, length))
+        # 127544
+        # 9
+
         numGenes <- length(genes2snps.dict)
         numSnpsPerGene <- max(I.j)
         numCells <- ncol(r)
+
+
+        ## 3D arrays: matrix[gene, snp, cell]
+
         ## j, i, k
+
+
+        # allelic coverage
         r.array <- array(0, c(numGenes, numSnpsPerGene, numCells))
         for(i in seq_len(numGenes)) {
-          snpst <- genes2snps.dict[[i]]
-          for(s in seq_along(snpst)) {
-            r.array[i,s,] <- r.maf[snpst[s],]
-          }
+            snpst <- genes2snps.dict[[i]]
+            for(s in seq_along(snpst)) {
+                r.array[i,s,] <- r.maf[snpst[s],]
+            }
         }
+
+        # total coverage
         n.sc.array <- array(0, c(numGenes, numSnpsPerGene, numCells))
         for(i in seq_len(numGenes)) {
           snpst <- genes2snps.dict[[i]]
@@ -1799,6 +1857,8 @@ HoneyBADGER$methods(
             n.sc.array[i,s,] <- n.sc[snpst[s],]
           }
         }
+
+        # count of cells w/ allelic coverage
         l.array <- array(0, c(numGenes, numSnpsPerGene))
         for(i in seq_len(numGenes)) {
           snpst <- genes2snps.dict[[i]]
@@ -1806,6 +1866,8 @@ HoneyBADGER$methods(
             l.array[i,s] <- l.maf[snpst[s]]
           }
         }
+
+        # count of cells w/ read coverage
         n.bulk.array <- array(0, c(numGenes, numSnpsPerGene))
         for(i in seq_len(numGenes)) {
           snpst <- genes2snps.dict[[i]]
