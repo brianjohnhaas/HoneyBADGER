@@ -41,8 +41,25 @@ data$pos = as.numeric( (data$start + data$end)/2)
 chr_maxpos = data %>% group_by(chr) %>% summarize(maxpos = max(pos))
 chr_maxpos$minpos = 1
 
+## do smoothing by cell and chr.
+
+data = data %>% mutate(cellchr = paste(cell, seqnames, sep=":"))
+splitdata = split(data, data$cellchr)
+
+smoother = function(df) {
+    df = df %>% arrange(pos)
+    df$exp.norm.smoothed = caTools::runmean(df$exp.norm,k=101, align="center")
+    return(df)
+}
+
+data = do.call(rbind, lapply(splitdata, smoother))
+
+
 ## set up base plot
 ## define chr boundaries based on max coordinates for now.
+
+data$exp.norm.smoothed[data$exp.norm.smoothed < -3] = -3
+data$exp.norm.smoothed[data$exp.norm.smoothed > 3] = 3
 
 
 p = ggplot(data=data) + facet_grid (~chr, scales = 'free_x', space = 'fixed') +
@@ -59,11 +76,13 @@ p = ggplot(data=data) + facet_grid (~chr, scales = 'free_x', space = 'fixed') +
     geom_vline(data=chr_maxpos, aes(xintercept=minpos), color=NA) +
     geom_vline(data=chr_maxpos, aes(xintercept=maxpos), color=NA) +
 
-    geom_point(aes(x=pos, y=cell, color=exp.norm), alpha=0.6) +
+    geom_point(aes(x=pos, y=cell, color=exp.norm.smoothed), alpha=0.6) +
 
     scale_colour_gradient2(low = "blue", mid = "white",
-                           high = "red", midpoint = 0, space = "Lab",
+                           high = "red", midpoint = 0,
+                           space = "Lab",
                            na.value = "grey50", guide = "colourbar", aesthetics = "colour")
+
 
 plot(p)
 
